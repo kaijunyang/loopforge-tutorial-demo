@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { auditLogs } from './data.js';
-import { AuthorizationError, listAuditLogs } from './audit-log-service.js';
+import { auditLogsToCsv, AuthorizationError, listAuditLogs } from './audit-log-service.js';
 
 function viewerFrom(request) {
   return {
@@ -16,6 +16,26 @@ function sendJSON(response, statusCode, value) {
   response.end(JSON.stringify(value));
 }
 
+function sendError(response, error) {
+  if (error instanceof AuthorizationError) {
+    return sendJSON(response, error.statusCode, {
+      error: error.code,
+      message: error.message
+    });
+  }
+
+  return sendJSON(response, 500, { error: 'INTERNAL_ERROR' });
+}
+
+function queryAuditLogs(request, url) {
+  return listAuditLogs({
+    logs: auditLogs,
+    viewer: viewerFrom(request),
+    projectId: url.searchParams.get('projectId') || '',
+    operatorId: url.searchParams.get('operatorId') || ''
+  });
+}
+
 export function createApp() {
   return http.createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
@@ -26,21 +46,26 @@ export function createApp() {
 
     if (request.method === 'GET' && url.pathname === '/api/audit-logs') {
       try {
-        const items = listAuditLogs({
-          logs: auditLogs,
-          viewer: viewerFrom(request),
-          projectId: url.searchParams.get('projectId') || ''
-        });
-        return sendJSON(response, 200, { items });
+        return sendJSON(response, 200, { items: queryAuditLogs(request, url) });
       } catch (error) {
-        if (error instanceof AuthorizationError) {
-          return sendJSON(response, error.statusCode, {
-            error: error.code,
-            message: error.message
-          });
-        }
-        return sendJSON(response, 500, { error: 'INTERNAL_ERROR' });
+        return sendError(response, error);
       }
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/audit-logs/export') {
+      let csv;
+
+      try {
+        csv = auditLogsToCsv(queryAuditLogs(request, url));
+      } catch (error) {
+        return sendError(response, error);
+      }
+
+      response.writeHead(200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': 'attachment; filename="audit-logs.csv"'
+      });
+      return response.end(csv);
     }
 
     return sendJSON(response, 404, { error: 'NOT_FOUND' });

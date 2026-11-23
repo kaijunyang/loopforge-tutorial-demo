@@ -43,13 +43,35 @@ curl \
 
 把本项目推送到 GitHub 后，在 LoopForge 中创建需求。需求正文可以直接复制 [docs/demo-requirement.md](docs/demo-requirement.md)。
 
-项目当前只实现了基础查询，尚未实现：
+当前接口：
 
-- 按 `operatorId` 筛选；
-- CSV 导出接口；
-- 筛选与导出的自动化测试。
+- `GET /api/audit-logs`：支持可选的 `projectId` 和 `operatorId` 查询参数，返回 JSON。
+- `GET /api/audit-logs/export`：同样支持 `projectId` 和 `operatorId`，返回 CSV 附件。
 
-这些内容将由 LoopForge 中的需求分析、开发、评审、测试和人工验收流程完成。
+普通成员只能访问自己所属项目，传入其他 `projectId` 会返回 `403`；管理员可以通过 `projectId` 指定项目。查询与导出共用同一套权限判断。
+
+按操作人筛选：
+
+```bash
+curl \
+  -H 'x-user-id: user-alice' \
+  -H 'x-role: member' \
+  -H 'x-project-id: project-alpha' \
+  'http://localhost:3000/api/audit-logs?operatorId=user-alice'
+```
+
+导出 CSV：
+
+```bash
+curl \
+  -H 'x-user-id: user-alice' \
+  -H 'x-role: member' \
+  -H 'x-project-id: project-alpha' \
+  -o audit-logs.csv \
+  'http://localhost:3000/api/audit-logs/export?operatorId=user-alice'
+```
+
+CSV 固定为 `id,projectId,operatorId,action,createdAt` 五列，使用 CRLF 换行、UTF-8 无 BOM，并按 RFC 4180 转义逗号、双引号和换行。
 
 ## 项目结构
 
@@ -62,6 +84,7 @@ curl \
 │   ├── data.js
 │   └── server.js
 ├── test/
+│   ├── audit-log-api.test.js
 │   └── audit-log-service.test.js
 └── package.json
 ```
